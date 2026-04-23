@@ -1,0 +1,85 @@
+# =========================
+# Build results
+# =========================
+[Bb]in/
+[Oo]bj/
+x64/
+x86/
+[Aa]rtifacts/
+
+# =========================
+# Visual Studio
+# =========================
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# =========================
+# Rider / VS Code (optional)
+# =========================
+.idea/
+.vscode/
+
+# =========================
+# NuGet
+# =========================
+*.nupkg
+*.snupkg
+# If you use packages.config (older projects):
+packages/
+# For PackageReference (modern), keep packages in repo → do NOT ignore global packages folder
+
+# =========================
+# Logs
+# =========================
+*.log
+
+# =========================
+# OS files
+# =========================
+.DS_Store
+Thumbs.db
+
+# =========================
+# Publish output
+# =========================
+publish/
+*.publish.xml
+
+# =========================
+# WPF-specific generated files
+# =========================
+*.g.cs
+*.g.i.cs
+*.baml
+
+# =========================
+# Test results
+# =========================
+TestResults/
+
+# =========================
+# Resharper
+# =========================
+_ReSharper*/
+*.DotSettings.user
+
+# =========================
+# Backup / temp
+# =========================
+*.bak
+*.tmp
+*.temp
+
+# =========================
+# Entity Framework / tooling
+# =========================
+*.edmx.diagram
+
+# =========================
+# ClickOnce / deployment
+# =========================
+*.application
+*.manifest
