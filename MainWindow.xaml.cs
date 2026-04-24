@@ -1,5 +1,7 @@
 ﻿using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
+using System.Media;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
@@ -19,16 +21,18 @@ namespace ImageSlicer
     /// </summary>
     public partial class MainWindow : Window
     {
-        private BitmapImage bitmap;
+        private string workingFolder = "";
         private System.Windows.Controls.Image img;
         private SliceDrawing sliceDrawing = new SliceDrawing();
 
         private List<SlicedItem> itemSlices = new List<SlicedItem>();
         private Geometry currentGeometry;
+
         public MainWindow()
         {
             InitializeComponent();
             sliceButton.IsEnabled = false;
+            saveButton.IsEnabled = false;
             this.Loaded += Window_Loaded;
             this.KeyDown += Window_KeyDown;
             this.MouseMove += Window_MouseMove;
@@ -41,25 +45,11 @@ namespace ImageSlicer
         }
 
         private void LoadCanvas()
-        {
-            // 1. Create a BitmapImage from a URI
-            bitmap = new BitmapImage(new Uri("C:\\Users\\pedro\\Pictures\\paris.jpg"));
-
-            // 2. Create the Image control
-            img = new System.Windows.Controls.Image
-            {
-                Source = bitmap,
-                Width = 482,
-                Height = 350
-            };
-
-            mainCanvas.Children.Add(img);
+        {   
         }
 
         private void Window_Loaded(object sender, RoutedEventArgs e)
         {
-            Canvas.SetLeft(img, mainCanvas.ActualWidth / 2 - img.ActualWidth / 2);
-            Canvas.SetTop(img, mainCanvas.ActualHeight / 2 - img.ActualHeight / 2);
         }
 
         private void Window_KeyDown(object sender, KeyEventArgs e)
@@ -117,6 +107,10 @@ namespace ImageSlicer
 
             CarveSliceIntoCurrentGeometry(sliceGeometry);
             img.Clip = currentGeometry;
+
+            sliceDrawing.ClearSliceDrawing(mainCanvas);
+
+            saveButton.IsEnabled = true;
         }
         private void CarveSliceIntoCurrentGeometry(PathGeometry sliceGeometry)
         {
@@ -184,9 +178,9 @@ namespace ImageSlicer
         {
             SlicedItem newSlice = new SlicedItem();
             newSlice.sliceImage.Source = source;
-            newSlice.text.Text = "[" + itemSlices.Count + "]";
-            newSlice.Index = itemSlices.Count;
             newSlice.snapPoint = GetRectCenter(sliceGeometry.Bounds);
+            newSlice.text.Text = "[" + itemSlices.Count + "] : (" + newSlice.snapPoint.X + ", " + newSlice.snapPoint.Y + ")";
+            newSlice.Index = itemSlices.Count;
 
             SlicedItemsBox.Items.Add(newSlice);
             itemSlices.Add(newSlice);
@@ -199,10 +193,12 @@ namespace ImageSlicer
 
             foreach (var slice in itemSlices)
             {
-                string path = "C:\\Users\\pedro\\Pictures\\" + slice.Index + ".png";
+                string path = workingFolder + "\\" + slice.Index + ".png";
                 BitmapSource bitmapSource = (BitmapSource)slice.sliceImage.Source;
                 SaveImageToFile(bitmapSource, path);
             }
+
+            OpenFolder(workingFolder);
         }
 
         public void SaveImageToFile(BitmapSource bitmapSource, string filePath)
@@ -217,7 +213,60 @@ namespace ImageSlicer
             }
         }
 
+        public void OpenFolder(string folderPath)
+        {
+            Process.Start("explorer.exe", folderPath);
+        }
+
         public Point GetRectCenter(Rect r) => new Point(r.X + (r.Width / 2), r.Y + (r.Height / 2));
+
+        private void openButton_Click(object sender, RoutedEventArgs e)
+        {
+            saveButton.IsEnabled = false;
+
+            var filePath = PickFile();
+            if (filePath == null || filePath == "") return;
+
+            sliceDrawing.ClearEverything();
+            RemoveItemSlices();
+
+            workingFolder = System.IO.Path.GetDirectoryName(filePath);    
+
+            BitmapImage bitmap = new BitmapImage(new Uri(filePath));
+
+            img = new System.Windows.Controls.Image
+            {
+                Source = bitmap,
+                Width = 482,
+                Height = 350
+            };
+
+            Canvas.SetLeft(img, mainCanvas.ActualWidth / 2 - img.Width / 2);
+            Canvas.SetTop(img, mainCanvas.ActualHeight / 2 - img.Height / 2);
+
+            mainCanvas.Children.Add(img);
+        }
+
+        private string PickFile()
+        {
+            var openFileDialog = new Microsoft.Win32.OpenFileDialog();
+            openFileDialog.Filter = "Images (*.png;*.jpg)|*.png;*.jpg"; // Filter by extension
+            openFileDialog.InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+
+            if (openFileDialog.ShowDialog() == true)
+            {
+                return openFileDialog.FileName;
+            }
+
+            return "";
+        }
+
+        private void RemoveItemSlices()
+        {
+            mainCanvas.Children.Clear();
+            itemSlices.Clear();
+            SlicedItemsBox.Items.Clear();
+        }
     }
 
     public class SliceDrawing
@@ -234,6 +283,15 @@ namespace ImageSlicer
         private readonly Brush MOUSE_LINE_COLOR = Brushes.Black;
         private readonly Brush MOUSE_LINE_TO_CLOSE_COLOR = Brushes.Green;
         private readonly Brush SLICE_COLOR = Brushes.Blue;
+
+        public void ClearEverything()
+        {
+            previewPoints.Clear();
+            isFinishedDrawing = false;
+            previewLines.Clear();
+            mouseLine = new Line();
+            slicePoly = new Polygon();
+        }
 
         public void CreateMouseLine(Canvas canvas, Point mousePos)
         {
