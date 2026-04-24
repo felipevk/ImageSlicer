@@ -9,7 +9,10 @@
     <Grid>
         <StackPanel>
             <StackPanel Orientation="Horizontal">
-                <Button x:Name="sliceButton" Content="Slice" HorizontalAlignment="Center" Margin="0,10,0,0" VerticalAlignment="Top" Width="142" Height="38" FontSize="16" FontWeight="Bold" Click="sliceButton_Click"/>
+                <Button x:Name="openButton" Width="184" Height="40" Content="Open" FontWeight="Bold" FontSize="16" />
+                <Border Width="675" />
+                <Button x:Name="sliceButton" Content="Slice" Width="142" Height="40" FontSize="16" FontWeight="Bold" Click="sliceButton_Click" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,0,10,0"/>
+                <Button x:Name="saveButton" Width="184" Height="40" Content="Save" FontWeight="Bold" FontSize="16" VerticalAlignment="Center" Click="saveButton_Click" />
             </StackPanel>
             <StackPanel Orientation="Horizontal" Height="933">
                 <Canvas Background="#FF4B0082" x:Name="mainCanvas" MouseLeftButtonDown="mainCanvas_MouseLeftButtonDown" Width="865" Height="842"/>

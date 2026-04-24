@@ -113,19 +113,10 @@ namespace ImageSlicer
 
             var rtb = RenderSlice(sliceGeometry);
 
-            AddNewSliceItem(rtb);
+            AddNewSliceItem(rtb, sliceGeometry);
 
             CarveSliceIntoCurrentGeometry(sliceGeometry);
             img.Clip = currentGeometry;
-
-            //var encoder = new PngBitmapEncoder();
-            //encoder.Frames.Add(BitmapFrame.Create(rtb));
-
-            //using (var stream = File.Create("C:\\Users\\pedro\\Pictures\\cropped.jpg"))
-            //{
-            //    encoder.Save(stream);
-            //}
-
         }
         private void CarveSliceIntoCurrentGeometry(PathGeometry sliceGeometry)
         {
@@ -189,15 +180,44 @@ namespace ImageSlicer
             return rtb;
         }
 
-        private void AddNewSliceItem(ImageSource source)
+        private void AddNewSliceItem(ImageSource source, PathGeometry sliceGeometry)
         {
             SlicedItem newSlice = new SlicedItem();
             newSlice.sliceImage.Source = source;
             newSlice.text.Text = "[" + itemSlices.Count + "]";
+            newSlice.Index = itemSlices.Count;
+            newSlice.snapPoint = GetRectCenter(sliceGeometry.Bounds);
 
             SlicedItemsBox.Items.Add(newSlice);
             itemSlices.Add(newSlice);
         }
+
+        private void saveButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (itemSlices.Count == 0)
+                return;
+
+            foreach (var slice in itemSlices)
+            {
+                string path = "C:\\Users\\pedro\\Pictures\\" + slice.Index + ".png";
+                BitmapSource bitmapSource = (BitmapSource)slice.sliceImage.Source;
+                SaveImageToFile(bitmapSource, path);
+            }
+        }
+
+        public void SaveImageToFile(BitmapSource bitmapSource, string filePath)
+        {
+            BitmapEncoder encoder = new PngBitmapEncoder();
+
+            encoder.Frames.Add(BitmapFrame.Create(bitmapSource));
+
+            using (var fileStream = new FileStream(filePath, FileMode.Create))
+            {
+                encoder.Save(fileStream);
+            }
+        }
+
+        public Point GetRectCenter(Rect r) => new Point(r.X + (r.Width / 2), r.Y + (r.Height / 2));
     }
 
     public class SliceDrawing
