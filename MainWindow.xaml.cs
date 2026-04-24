@@ -1,4 +1,6 @@
-﻿using System.Text;
+﻿using System.Collections.Generic;
+using System.IO;
+using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
@@ -6,9 +8,9 @@ using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using System.Windows.Media.Media3D;
 using System.Windows.Navigation;
 using System.Windows.Shapes;
-using System.Collections.Generic;
 
 namespace ImageSlicer
 {
@@ -17,8 +19,12 @@ namespace ImageSlicer
     /// </summary>
     public partial class MainWindow : Window
     {
-        private Image img;
+        private BitmapImage bitmap;
+        private System.Windows.Controls.Image img;
         private SliceDrawing sliceDrawing = new SliceDrawing();
+
+        private List<SlicedItem> itemSlices = new List<SlicedItem>();
+        private Geometry currentGeometry;
         public MainWindow()
         {
             InitializeComponent();
@@ -37,10 +43,10 @@ namespace ImageSlicer
         private void LoadCanvas()
         {
             // 1. Create a BitmapImage from a URI
-            BitmapImage bitmap = new BitmapImage(new Uri("C:\\Users\\pedro\\Pictures\\paris.jpg"));
+            bitmap = new BitmapImage(new Uri("C:\\Users\\pedro\\Pictures\\paris.jpg"));
 
             // 2. Create the Image control
-            img = new Image
+            img = new System.Windows.Controls.Image
             {
                 Source = bitmap,
                 Width = 482,
@@ -98,7 +104,108 @@ namespace ImageSlicer
             }
         }
 
-        
+        private void sliceButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (!sliceDrawing.isFinishedDrawing)
+                return;
+
+            Point imgLocation = img.TranslatePoint(new Point(0, 0), mainCanvas);
+
+            // Translate points from canvas space to image space
+            PointCollection slicePoints = new PointCollection();
+            var to_image_space = mainCanvas.TransformToVisual(img);
+            for (int i = 0; i < sliceDrawing.slicePoly.Points.Count; i++)
+            {
+                slicePoints.Add(to_image_space.Transform(sliceDrawing.slicePoly.Points[i]));
+            }
+
+            var segment = new PolyLineSegment
+            {
+                Points = new PointCollection(slicePoints.Skip(1))
+            };
+
+            var figure = new PathFigure
+            {
+                StartPoint = slicePoints[0],
+                IsClosed = true
+            };
+            figure.Segments.Add(segment);
+
+            var sliceGeometry = new PathGeometry();
+            sliceGeometry.Figures.Add(figure);
+
+            Rect sliceBounds = sliceGeometry.Bounds;
+
+            var rtb = new RenderTargetBitmap(
+                (int)Math.Ceiling(sliceBounds.Width),
+                (int)Math.Ceiling(sliceBounds.Height),
+                96, 96,
+                PixelFormats.Pbgra32);
+
+            var visual = new DrawingVisual();
+
+            using (var dc = visual.RenderOpen())
+            {
+                // in this context, the slice will be rendered at 0,0
+                // so everything must be shifted by the slice bounds
+                var to_slice_space = new TranslateTransform(-sliceBounds.X, -sliceBounds.Y);
+                var shiftedGeometry = sliceGeometry.Clone();
+                shiftedGeometry.Transform = to_slice_space;
+
+                var renderGeometry = shiftedGeometry;
+                if (currentGeometry != null)
+                {
+                    var shiftedCurrentGeometry = currentGeometry.Clone();
+                    shiftedCurrentGeometry.Transform = to_slice_space;
+                    renderGeometry = Geometry.Combine(
+                        shiftedCurrentGeometry,
+                        shiftedGeometry,
+                        GeometryCombineMode.Intersect,
+                        null);
+                }
+                dc.PushClip(renderGeometry);
+
+                dc.DrawImage(
+                    img.Source,
+                    new Rect(
+                        -sliceBounds.X,
+                        -sliceBounds.Y,
+                        img.ActualWidth,
+                        img.ActualHeight));
+
+                dc.Pop();
+            }
+
+            rtb.Render(visual);
+
+            SlicedItem newSlice = new SlicedItem();
+            newSlice.sliceImage.Source = rtb;
+            newSlice.text.Text = "[" + itemSlices.Count + "]";
+
+            SlicedItemsBox.Items.Add(newSlice);
+            itemSlices.Add(newSlice);
+
+            if (currentGeometry == null)
+            {
+                currentGeometry = new RectangleGeometry(new Rect(0, 0, img.ActualWidth, img.ActualHeight));
+            } 
+            var excludeGeometry = Geometry.Combine(
+                currentGeometry,
+                sliceGeometry,
+                GeometryCombineMode.Exclude,
+                null);
+            currentGeometry = excludeGeometry;
+            img.Clip = currentGeometry;
+
+            //var encoder = new PngBitmapEncoder();
+            //encoder.Frames.Add(BitmapFrame.Create(rtb));
+
+            //using (var stream = File.Create("C:\\Users\\pedro\\Pictures\\cropped.jpg"))
+            //{
+            //    encoder.Save(stream);
+            //}
+
+        }
     }
 
     public class SliceDrawing
@@ -109,7 +216,7 @@ namespace ImageSlicer
         private const double DISTANCE_TO_CLOSE_SLICE = 10;
         private List<Line> previewLines = new List<Line>();
         private Line mouseLine = new Line();
-        private Polygon slicePoly = new Polygon();
+        public Polygon slicePoly = new Polygon();
 
         private readonly Brush PREVIEW_COLOR = Brushes.Black;
         private readonly Brush MOUSE_LINE_COLOR = Brushes.Black;
@@ -118,7 +225,7 @@ namespace ImageSlicer
 
         public void CreateMouseLine(Canvas canvas, Point mousePos)
         {
-            if (previewPoints.Count <= 1)
+            if (previewPoints.Count < 1)
                 return;
 
             Point lastSlicePos = previewPoints[previewPoints.Count - 1];
