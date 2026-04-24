@@ -109,33 +109,41 @@ namespace ImageSlicer
             if (!sliceDrawing.isFinishedDrawing)
                 return;
 
-            Point imgLocation = img.TranslatePoint(new Point(0, 0), mainCanvas);
+            var sliceGeometry = sliceDrawing.GetSliceGeometry(mainCanvas, img);
 
-            // Translate points from canvas space to image space
-            PointCollection slicePoints = new PointCollection();
-            var to_image_space = mainCanvas.TransformToVisual(img);
-            for (int i = 0; i < sliceDrawing.slicePoly.Points.Count; i++)
+            var rtb = RenderSlice(sliceGeometry);
+
+            AddNewSliceItem(rtb);
+
+            CarveSliceIntoCurrentGeometry(sliceGeometry);
+            img.Clip = currentGeometry;
+
+            //var encoder = new PngBitmapEncoder();
+            //encoder.Frames.Add(BitmapFrame.Create(rtb));
+
+            //using (var stream = File.Create("C:\\Users\\pedro\\Pictures\\cropped.jpg"))
+            //{
+            //    encoder.Save(stream);
+            //}
+
+        }
+        private void CarveSliceIntoCurrentGeometry(PathGeometry sliceGeometry)
+        {
+            if (currentGeometry == null)
             {
-                slicePoints.Add(to_image_space.Transform(sliceDrawing.slicePoly.Points[i]));
+                currentGeometry = new RectangleGeometry(new Rect(0, 0, img.ActualWidth, img.ActualHeight));
             }
+            var excludeGeometry = Geometry.Combine(
+                currentGeometry,
+                sliceGeometry,
+                GeometryCombineMode.Exclude,
+                null);
+            currentGeometry = excludeGeometry;
+        }
 
-            var segment = new PolyLineSegment
-            {
-                Points = new PointCollection(slicePoints.Skip(1))
-            };
-
-            var figure = new PathFigure
-            {
-                StartPoint = slicePoints[0],
-                IsClosed = true
-            };
-            figure.Segments.Add(segment);
-
-            var sliceGeometry = new PathGeometry();
-            sliceGeometry.Figures.Add(figure);
-
+        private RenderTargetBitmap RenderSlice(PathGeometry sliceGeometry)
+        {
             Rect sliceBounds = sliceGeometry.Bounds;
-
             var rtb = new RenderTargetBitmap(
                 (int)Math.Ceiling(sliceBounds.Width),
                 (int)Math.Ceiling(sliceBounds.Height),
@@ -149,17 +157,17 @@ namespace ImageSlicer
                 // in this context, the slice will be rendered at 0,0
                 // so everything must be shifted by the slice bounds
                 var to_slice_space = new TranslateTransform(-sliceBounds.X, -sliceBounds.Y);
-                var shiftedGeometry = sliceGeometry.Clone();
-                shiftedGeometry.Transform = to_slice_space;
+                var shiftedSliceGeometry = sliceGeometry.Clone();
+                shiftedSliceGeometry.Transform = to_slice_space;
 
-                var renderGeometry = shiftedGeometry;
+                var renderGeometry = shiftedSliceGeometry;
                 if (currentGeometry != null)
                 {
                     var shiftedCurrentGeometry = currentGeometry.Clone();
                     shiftedCurrentGeometry.Transform = to_slice_space;
                     renderGeometry = Geometry.Combine(
                         shiftedCurrentGeometry,
-                        shiftedGeometry,
+                        shiftedSliceGeometry,
                         GeometryCombineMode.Intersect,
                         null);
                 }
@@ -178,33 +186,17 @@ namespace ImageSlicer
 
             rtb.Render(visual);
 
+            return rtb;
+        }
+
+        private void AddNewSliceItem(ImageSource source)
+        {
             SlicedItem newSlice = new SlicedItem();
-            newSlice.sliceImage.Source = rtb;
+            newSlice.sliceImage.Source = source;
             newSlice.text.Text = "[" + itemSlices.Count + "]";
 
             SlicedItemsBox.Items.Add(newSlice);
             itemSlices.Add(newSlice);
-
-            if (currentGeometry == null)
-            {
-                currentGeometry = new RectangleGeometry(new Rect(0, 0, img.ActualWidth, img.ActualHeight));
-            } 
-            var excludeGeometry = Geometry.Combine(
-                currentGeometry,
-                sliceGeometry,
-                GeometryCombineMode.Exclude,
-                null);
-            currentGeometry = excludeGeometry;
-            img.Clip = currentGeometry;
-
-            //var encoder = new PngBitmapEncoder();
-            //encoder.Frames.Add(BitmapFrame.Create(rtb));
-
-            //using (var stream = File.Create("C:\\Users\\pedro\\Pictures\\cropped.jpg"))
-            //{
-            //    encoder.Save(stream);
-            //}
-
         }
     }
 
@@ -304,6 +296,37 @@ namespace ImageSlicer
             double distance = (mousePos - firstSlicePos).Length;
 
             return distance < DISTANCE_TO_CLOSE_SLICE;
+        }
+
+        public PathGeometry GetSliceGeometry(Canvas canvas, Image image)
+        {
+            if (!isFinishedDrawing)
+                return null;
+
+            // Translate points from canvas space to image space
+            PointCollection slicePoints = new PointCollection();
+            var to_image_space = canvas.TransformToVisual(image);
+            for (int i = 0; i < slicePoly.Points.Count; i++)
+            {
+                slicePoints.Add(to_image_space.Transform(slicePoly.Points[i]));
+            }
+
+            var segment = new PolyLineSegment
+            {
+                Points = new PointCollection(slicePoints.Skip(1))
+            };
+
+            var figure = new PathFigure
+            {
+                StartPoint = slicePoints[0],
+                IsClosed = true
+            };
+            figure.Segments.Add(segment);
+
+            var sliceGeometry = new PathGeometry();
+            sliceGeometry.Figures.Add(figure);
+
+            return sliceGeometry;
         }
     }
 }
