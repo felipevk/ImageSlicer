@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Media;
 using System.Text;
+using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
@@ -198,6 +199,8 @@ namespace ImageSlicer
                 SaveImageToFile(bitmapSource, path);
             }
 
+            SaveSnapPoints(workingFolder);
+
             OpenFolder(workingFolder);
         }
 
@@ -230,7 +233,8 @@ namespace ImageSlicer
             sliceDrawing.ClearEverything();
             RemoveItemSlices();
 
-            workingFolder = System.IO.Path.GetDirectoryName(filePath);    
+            workingFolder = System.IO.Path.GetDirectoryName(filePath);
+            directoryText.Text = workingFolder;
 
             BitmapImage bitmap = new BitmapImage(new Uri(filePath));
 
@@ -267,6 +271,25 @@ namespace ImageSlicer
             itemSlices.Clear();
             SlicedItemsBox.Items.Clear();
         }
+
+        private SnapPointsSettings GetSnapPointsSettings()
+        {
+            SnapPointsSettings settings = new SnapPointsSettings();
+            foreach (var item in itemSlices)
+            {
+                settings.snap_points.Add(new int[2]{ (int)item.snapPoint.X, (int)item.snapPoint.Y });
+            }
+            return settings;
+        }
+
+        private void SaveSnapPoints(string path)
+        {
+            var jsonSettings = GetSnapPointsSettings();
+
+            string jsonString = JsonSerializer.Serialize(jsonSettings, new JsonSerializerOptions { WriteIndented = true });
+            File.WriteAllText(path + "\\" + "snap_points.json", jsonString);
+        }
+
     }
 
     public class SliceDrawing
@@ -405,6 +428,16 @@ namespace ImageSlicer
             sliceGeometry.Figures.Add(figure);
 
             return sliceGeometry;
+        }
+    }
+
+    public class SnapPointsSettings
+    {
+        public List<int[]> snap_points { get; set; }
+
+        public SnapPointsSettings()
+        {
+            snap_points = new List<int[]>();
         }
     }
 }
