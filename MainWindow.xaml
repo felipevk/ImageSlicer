@@ -12,10 +12,10 @@
                 <Button x:Name="openButton" Width="184" Height="40" Content="Open" FontWeight="Bold" FontSize="16" Click="openButton_Click" />
                 <Border Width="675" />
                 <Button x:Name="sliceButton" Content="Slice" Width="142" Height="40" FontSize="16" FontWeight="Bold" Click="sliceButton_Click" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,0,10,0"/>
-                <Button x:Name="saveButton" Width="184" Height="40" Content="Save" FontWeight="Bold" FontSize="16" VerticalAlignment="Center" Click="saveButton_Click" />
+                <Button x:Name="saveButton" Width="184" Height="40" Content="Save" FontWeight="Bold" FontSize="16" VerticalAlignment="Center" Click="saveButton_Click" Margin="0,0,-4,0" />
             </StackPanel>
             <StackPanel Orientation="Horizontal" Height="885">
-                <Canvas Background="#FF4B0082" x:Name="mainCanvas" MouseLeftButtonDown="mainCanvas_MouseLeftButtonDown" Width="865" Height="866" VerticalAlignment="Top" Margin="0,20,0,0"/>
+                <Canvas Background="#B0C4DE" x:Name="mainCanvas" MouseLeftButtonDown="mainCanvas_MouseLeftButtonDown" Width="865" Height="866" VerticalAlignment="Top" Margin="0,20,0,0"/>
                 <StackPanel Width="334">
                     <TextBlock Text="Slices" FontWeight="Bold" FontSize="14" TextAlignment="Center" />
                     <ListBox ScrollViewer.HorizontalScrollBarVisibility="Disabled" HorizontalContentAlignment="Stretch" x:Name="SlicedItemsBox" Width="324" d:ItemsSource="{d:SampleData ItemCount=5}" Height="867"/>
