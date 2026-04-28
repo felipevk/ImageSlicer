@@ -19,7 +19,7 @@ namespace ImageSlicer
     public partial class SlicedItem : UserControl
     {
         public int Index { get; set; }
-        public Point snapPoint { get; set; }
+        public Rect bounds { get; set; }
         public SlicedItem()
         {
             InitializeComponent();

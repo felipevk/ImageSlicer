@@ -17,6 +17,10 @@ using System.Windows.Shapes;
 
 namespace ImageSlicer
 {
+    public static class Utils
+    {
+        public static Point GetRectCenter(Rect r) => new Point(r.X + (r.Width / 2), r.Y + (r.Height / 2));
+    }
     /// <summary>
     /// Interaction logic for MainWindow.xaml
     /// </summary>
@@ -34,23 +38,8 @@ namespace ImageSlicer
             InitializeComponent();
             sliceButton.IsEnabled = false;
             saveButton.IsEnabled = false;
-            this.Loaded += Window_Loaded;
             this.KeyDown += Window_KeyDown;
             this.MouseMove += Window_MouseMove;
-            LoadCanvas();
-        }
-
-        private void MainWindow_KeyDown(object sender, KeyEventArgs e)
-        {
-            throw new NotImplementedException();
-        }
-
-        private void LoadCanvas()
-        {   
-        }
-
-        private void Window_Loaded(object sender, RoutedEventArgs e)
-        {
         }
 
         private void Window_KeyDown(object sender, KeyEventArgs e)
@@ -85,7 +74,7 @@ namespace ImageSlicer
             {
                 if (sliceDrawing.IsMouseCloseToSliceBegin(mousePos))
                 {
-                    sliceDrawing.FinishSliceDrawing(mainCanvas);
+                    sliceDrawing.FinishSliceDrawing(mainCanvas, img);
                     sliceButton.IsEnabled = true;
                 }
                 else
@@ -102,7 +91,7 @@ namespace ImageSlicer
 
             var sliceGeometry = sliceDrawing.GetSliceGeometry(mainCanvas, img);
 
-            var rtb = RenderSlice(sliceGeometry);
+            var rtb = RenderSlice(sliceGeometry, img);
 
             AddNewSliceItem(rtb, sliceGeometry);
 
@@ -127,13 +116,15 @@ namespace ImageSlicer
             currentGeometry = excludeGeometry;
         }
 
-        private RenderTargetBitmap RenderSlice(PathGeometry sliceGeometry)
+        private RenderTargetBitmap RenderSlice(PathGeometry sliceGeometry, Visual sourceVisual)
         {
+            var dpi = VisualTreeHelper.GetDpi(sourceVisual);
+
             Rect sliceBounds = sliceGeometry.Bounds;
             var rtb = new RenderTargetBitmap(
                 (int)Math.Ceiling(sliceBounds.Width),
                 (int)Math.Ceiling(sliceBounds.Height),
-                96, 96,
+                dpi.PixelsPerInchX, dpi.PixelsPerInchY,
                 PixelFormats.Pbgra32);
 
             var visual = new DrawingVisual();
@@ -179,8 +170,8 @@ namespace ImageSlicer
         {
             SlicedItem newSlice = new SlicedItem();
             newSlice.sliceImage.Source = source;
-            newSlice.snapPoint = GetRectCenter(sliceGeometry.Bounds);
-            newSlice.text.Text = "[" + itemSlices.Count + "] : (" + newSlice.snapPoint.X + ", " + newSlice.snapPoint.Y + ")";
+            newSlice.bounds = sliceGeometry.Bounds;
+            newSlice.text.Text = "[" + itemSlices.Count + "] : (X: " + newSlice.bounds.X + ", Y: " + newSlice.bounds.Y + ")";
             newSlice.Index = itemSlices.Count;
 
             SlicedItemsBox.Items.Add(newSlice);
@@ -221,8 +212,6 @@ namespace ImageSlicer
             Process.Start("explorer.exe", folderPath);
         }
 
-        public Point GetRectCenter(Rect r) => new Point(r.X + (r.Width / 2), r.Y + (r.Height / 2));
-
         private void openButton_Click(object sender, RoutedEventArgs e)
         {
             saveButton.IsEnabled = false;
@@ -241,8 +230,8 @@ namespace ImageSlicer
             img = new System.Windows.Controls.Image
             {
                 Source = bitmap,
-                Width = 482,
-                Height = 350
+                Width = bitmap.Width,
+                Height = bitmap.Height
             };
 
             Canvas.SetLeft(img, mainCanvas.ActualWidth / 2 - img.Width / 2);
@@ -272,12 +261,12 @@ namespace ImageSlicer
             SlicedItemsBox.Items.Clear();
         }
 
-        private SnapPointsSettings GetSnapPointsSettings()
+        private SnapBoundsListSettings GetSnapPointsSettings()
         {
-            SnapPointsSettings settings = new SnapPointsSettings();
+            SnapBoundsListSettings settings = new SnapBoundsListSettings();
             foreach (var item in itemSlices)
             {
-                settings.snap_points.Add(new int[2]{ (int)item.snapPoint.X, (int)item.snapPoint.Y });
+                settings.snap_bounds.Add(new SnapBoundsSettings(item.bounds));
             }
             return settings;
         }
@@ -301,11 +290,14 @@ namespace ImageSlicer
         private List<Line> previewLines = new List<Line>();
         private Line mouseLine = new Line();
         public Polygon slicePoly = new Polygon();
+        public Rectangle boundsRect = new Rectangle();
+        public Ellipse boundsCenter = new Ellipse();
 
         private readonly Brush PREVIEW_COLOR = Brushes.Black;
         private readonly Brush MOUSE_LINE_COLOR = Brushes.Black;
         private readonly Brush MOUSE_LINE_TO_CLOSE_COLOR = Brushes.Green;
         private readonly Brush SLICE_COLOR = Brushes.Blue;
+        private readonly Brush RECT_COLOR = Brushes.Blue;
 
         public void ClearEverything()
         {
@@ -372,13 +364,32 @@ namespace ImageSlicer
             canvas.Children.Remove(mouseLine);
         }
 
-        public void FinishSliceDrawing(Canvas canvas)
+        public void FinishSliceDrawing(Canvas canvas, Image image)
         {
             isFinishedDrawing = true;
             slicePoly.Stroke = SLICE_COLOR;
             slicePoly.StrokeThickness = 2;
             slicePoly.Points = new PointCollection(previewPoints);
             canvas.Children.Add(slicePoly);
+
+            Rect polyRect = GetSliceGeometry(canvas, image, false).Bounds;
+            boundsRect = new Rectangle { 
+                Width = polyRect.Width,
+                Height = polyRect.Height,
+                StrokeDashArray = [4, 2],
+                Stroke = RECT_COLOR
+            };
+            Canvas.SetLeft(boundsRect, polyRect.X);
+            Canvas.SetTop(boundsRect, polyRect.Y);
+            canvas.Children.Add(boundsRect);
+
+            boundsCenter.Fill = RECT_COLOR;
+            boundsCenter.Width = 10;
+            boundsCenter.Height = 10;
+            Canvas.SetLeft(boundsCenter, Utils.GetRectCenter(polyRect).X);
+            Canvas.SetTop(boundsCenter, Utils.GetRectCenter(polyRect).Y);
+            canvas.Children.Add(boundsCenter);
+
             ClearSlicePreview(canvas);
         }
 
@@ -386,6 +397,8 @@ namespace ImageSlicer
         {
             isFinishedDrawing = false;
             canvas.Children.Remove(slicePoly);
+            canvas.Children.Remove(boundsRect);
+            canvas.Children.Remove(boundsCenter);
         }
 
         public bool IsMouseCloseToSliceBegin(Point mousePos)
@@ -399,7 +412,7 @@ namespace ImageSlicer
             return distance < DISTANCE_TO_CLOSE_SLICE;
         }
 
-        public PathGeometry GetSliceGeometry(Canvas canvas, Image image)
+        public PathGeometry GetSliceGeometry(Canvas canvas, Image image, bool useImageSpace = true)
         {
             if (!isFinishedDrawing)
                 return null;
@@ -409,7 +422,7 @@ namespace ImageSlicer
             var to_image_space = canvas.TransformToVisual(image);
             for (int i = 0; i < slicePoly.Points.Count; i++)
             {
-                slicePoints.Add(to_image_space.Transform(slicePoly.Points[i]));
+                slicePoints.Add(useImageSpace ? to_image_space.Transform(slicePoly.Points[i]) : slicePoly.Points[i]);
             }
 
             var segment = new PolyLineSegment
@@ -431,13 +444,29 @@ namespace ImageSlicer
         }
     }
 
-    public class SnapPointsSettings
-    {
-        public List<int[]> snap_points { get; set; }
 
-        public SnapPointsSettings()
+    public class SnapBoundsSettings
+    {
+        public int X { get; set; }
+        public int Y { get; set; }
+        public int W { get; set; }
+        public int H { get; set; }
+
+        public SnapBoundsSettings(Rect r)
         {
-            snap_points = new List<int[]>();
+            X = (int)r.X;
+            Y = (int)r.Y;
+            W = (int)r.Width;
+            H = (int)r.Height;
+        }
+    }
+    public class SnapBoundsListSettings
+    {
+        public List<SnapBoundsSettings> snap_bounds { get; set; }
+
+        public SnapBoundsListSettings()
+        {
+            snap_bounds = new List<SnapBoundsSettings>();
         }
     }
 }
