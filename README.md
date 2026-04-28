@@ -1,4 +1,4 @@
-# Polygonal Image Cropping Tool (WPF)
+# Polygonal Image Cropping Tool (PICT)
 WPF lightweight image editing tool that supports precise polygon-based cropping.
 ![Local Image](./preview.png)
 
