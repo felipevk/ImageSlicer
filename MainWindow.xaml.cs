@@ -20,17 +20,72 @@ namespace ImageSlicer
     public static class Utils
     {
         public static Point GetRectCenter(Rect r) => new Point(r.X + (r.Width / 2), r.Y + (r.Height / 2));
+
+        public static PointCollection GetPointsFromGeometry(Geometry geometry)
+        {
+            PointCollection points = new PointCollection();
+            // Convert generic Geometry to PathGeometry
+            PathGeometry pathGeometry = PathGeometry.CreateFromGeometry(geometry);
+
+            foreach (PathFigure figure in pathGeometry.Figures)
+            {
+                points.Add(figure.StartPoint);
+                foreach (PathSegment segment in figure.Segments)
+                {
+                    if (segment is LineSegment lineSegment)
+                    {
+                        points.Add(lineSegment.Point);
+                    }
+                    else if (segment is PolyLineSegment polylineSegment)
+                    {
+                        foreach (Point p in polylineSegment.Points)
+                            points.Add(p);
+                    }
+                    // Note: BezierSegment or ArcSegment require flattening to get discrete points
+                }
+            }
+            return points;
+        }
+
+        public static PathGeometry GetGeometryFromPoints(PointCollection points)
+        {
+            var segment = new PolyLineSegment
+            {
+                Points = new PointCollection(points.Skip(1))
+            };
+
+            var figure = new PathFigure
+            {
+                StartPoint = points[0],
+                IsClosed = true
+            };
+            figure.Segments.Add(segment);
+
+            var geometry = new PathGeometry();
+            geometry.Figures.Add(figure);
+
+            return geometry;
+        }
+
+        public static PathGeometry Intersection(Geometry a, Geometry b)
+        {
+            return Geometry.Combine(a, b, GeometryCombineMode.Intersect, null);
+        }
     }
+
     /// <summary>
     /// Interaction logic for MainWindow.xaml
     /// </summary>
     public partial class MainWindow : Window
     {
+        private SelectionPreviewData previewData = new SelectionPreviewData();
         private string workingFolder = "";
         private System.Windows.Controls.Image img;
-        private SliceDrawing sliceDrawing = new SliceDrawing();
+        private SelectionPreviewShape slicePreviewShape = new SelectionPreviewShape();
 
         private List<SlicedItem> itemSlices = new List<SlicedItem>();
+
+        // in image space
         private Geometry currentGeometry;
 
         public MainWindow()
@@ -42,54 +97,62 @@ namespace ImageSlicer
             this.MouseMove += Window_MouseMove;
         }
 
+        private void ClearSelection()
+        {
+            previewData.Clear();
+            slicePreviewShape.RemoveAllFrom(mainCanvas);
+        }
+
         private void Window_KeyDown(object sender, KeyEventArgs e)
         {
             if (e.Key == Key.Escape)
             {
-                sliceDrawing.ClearSlicePreview(mainCanvas);
+                ClearSelection();
             }
         }
 
         private void Window_MouseMove(object sender, MouseEventArgs e)
         {
-            if (sliceDrawing.previewPoints.Count < 1)
+            if (previewData.Points.Count < 1)
                 return;
 
             Point mousePos = e.GetPosition(mainCanvas);
 
-            sliceDrawing.CreateMouseLine(mainCanvas, mousePos);
+            slicePreviewShape.CreateMouseLine(mainCanvas, mousePos, previewData);
         }
 
         private void mainCanvas_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
             Point mousePos = e.GetPosition(mainCanvas);
 
-            if (sliceDrawing.isFinishedDrawing)
+            if (slicePreviewShape.isClosed)
             {
-                sliceDrawing.ClearSliceDrawing(mainCanvas);
-                sliceDrawing.AddPreviewPoint(mainCanvas, mousePos);
+                previewData.Add(mousePos);
+                slicePreviewShape.RemoveDrawingFrom(mainCanvas);
+                slicePreviewShape.AddPreviewLine(mainCanvas, previewData);
                 sliceButton.IsEnabled = false;
             }
             else
             {
-                if (sliceDrawing.IsMouseCloseToSliceBegin(mousePos))
+                if (previewData.IsPointCloseToStart(mousePos))
                 {
-                    sliceDrawing.FinishSliceDrawing(mainCanvas, img);
+                    slicePreviewShape.Close(mainCanvas, previewData);
                     sliceButton.IsEnabled = true;
                 }
                 else
                 {
-                    sliceDrawing.AddPreviewPoint(mainCanvas, mousePos);
+                    previewData.Add(mousePos);
+                    slicePreviewShape.AddPreviewLine(mainCanvas, previewData);
                 }
             }
         }
-
         private void sliceButton_Click(object sender, RoutedEventArgs e)
         {
-            if (!sliceDrawing.isFinishedDrawing)
+            if (!slicePreviewShape.isClosed)
                 return;
 
-            var sliceGeometry = sliceDrawing.GetSliceGeometry(mainCanvas, img);
+            // Move geometry to image space
+            var sliceGeometry = previewData.GetGeometry(mainCanvas, img);
 
             var rtb = RenderSlice(sliceGeometry, img);
 
@@ -98,16 +161,12 @@ namespace ImageSlicer
             CarveSliceIntoCurrentGeometry(sliceGeometry);
             img.Clip = currentGeometry;
 
-            sliceDrawing.ClearSliceDrawing(mainCanvas);
+            ClearSelection();
 
             saveButton.IsEnabled = true;
         }
         private void CarveSliceIntoCurrentGeometry(PathGeometry sliceGeometry)
         {
-            if (currentGeometry == null)
-            {
-                currentGeometry = new RectangleGeometry(new Rect(0, 0, img.ActualWidth, img.ActualHeight));
-            }
             var excludeGeometry = Geometry.Combine(
                 currentGeometry,
                 sliceGeometry,
@@ -219,7 +278,8 @@ namespace ImageSlicer
             var filePath = PickFile();
             if (filePath == null || filePath == "") return;
 
-            sliceDrawing.ClearEverything();
+            previewData.Clear();
+            slicePreviewShape.RemoveAllFrom(mainCanvas);
             RemoveItemSlices();
 
             workingFolder = System.IO.Path.GetDirectoryName(filePath);
@@ -238,6 +298,12 @@ namespace ImageSlicer
             Canvas.SetTop(img, mainCanvas.ActualHeight / 2 - img.Height / 2);
 
             mainCanvas.Children.Add(img);
+            img.Loaded += OnImageLoaded;
+        }
+
+        private void OnImageLoaded(object sender, RoutedEventArgs args)
+        {
+            currentGeometry = new RectangleGeometry(new Rect(0, 0, img.ActualWidth, img.ActualHeight));
         }
 
         private string PickFile()
@@ -281,12 +347,73 @@ namespace ImageSlicer
 
     }
 
-    public class SliceDrawing
+    /// <summary>
+    /// Data used in canvas selection
+    /// </summary>
+    public class SelectionPreviewData
     {
-        public List<Point> previewPoints = new List<Point>();
-        public bool isFinishedDrawing = false;
-
         private const double DISTANCE_TO_CLOSE_SLICE = 10;
+        public List<Point> Points { get; set; }
+
+        public SelectionPreviewData()
+        {
+            Points = new List<Point>();
+        }
+
+        public SelectionPreviewData(PointCollection collection)
+        {
+            Points = new List<Point>();
+            foreach (Point point in collection)
+            {
+                Points.Add(point);
+            }
+        }
+
+        public void Add(Point point)
+        {
+            Points.Add(point);
+        }
+        public void Clear()
+        {
+            Points.Clear();
+        }
+        public bool IsPointCloseToStart(Point pos)
+        {
+            if (Points.Count < 1)
+                return false;
+
+            Point first = Points[0];
+            double distance = (pos - first).Length;
+
+            return distance < DISTANCE_TO_CLOSE_SLICE;
+        }
+
+        public PointCollection ToPointCollection()
+        {
+            return new PointCollection(Points);
+        }
+
+        public PathGeometry GetGeometry()
+        {
+            return Utils.GetGeometryFromPoints(ToPointCollection());
+        }
+
+        public PathGeometry GetGeometry(Canvas canvas, Image image)
+        {
+            PointCollection imageSpacePoints = new PointCollection();
+            var to_image_space = canvas.TransformToVisual(image);
+            for (int i = 0; i < Points.Count; i++)
+            {
+                imageSpacePoints.Add(to_image_space.Transform(Points[i]));
+            }
+
+            return Utils.GetGeometryFromPoints(imageSpacePoints);
+        }
+    }
+
+    public class SelectionPreviewShape
+    {
+        public bool isClosed = false;
         private List<Line> previewLines = new List<Line>();
         private Line mouseLine = new Line();
         public Polygon slicePoly = new Polygon();
@@ -299,23 +426,14 @@ namespace ImageSlicer
         private readonly Brush SLICE_COLOR = Brushes.Blue;
         private readonly Brush RECT_COLOR = Brushes.Blue;
 
-        public void ClearEverything()
+        public void CreateMouseLine(Canvas canvas, Point mousePos, SelectionPreviewData previewData)
         {
-            previewPoints.Clear();
-            isFinishedDrawing = false;
-            previewLines.Clear();
-            mouseLine = new Line();
-            slicePoly = new Polygon();
-        }
-
-        public void CreateMouseLine(Canvas canvas, Point mousePos)
-        {
-            if (previewPoints.Count < 1)
+            if (isClosed || previewData.Points.Count < 1)
                 return;
 
-            Point lastSlicePos = previewPoints[previewPoints.Count - 1];
+            Point lastSlicePos = previewData.Points[previewData.Points.Count - 1];
 
-            mouseLine.Stroke = IsMouseCloseToSliceBegin(mousePos) ? MOUSE_LINE_TO_CLOSE_COLOR : MOUSE_LINE_COLOR;
+            mouseLine.Stroke = previewData.IsPointCloseToStart(mousePos) ? MOUSE_LINE_TO_CLOSE_COLOR : MOUSE_LINE_COLOR;
             mouseLine.X1 = lastSlicePos.X;
             mouseLine.Y1 = lastSlicePos.Y;
             mouseLine.X2 = mousePos.X;
@@ -329,23 +447,20 @@ namespace ImageSlicer
             }
         }
 
-        public void AddPreviewPoint(Canvas canvas, Point point)
+        public void AddPreviewLine(Canvas canvas, SelectionPreviewData previewData)
         {
-            previewPoints.Add(point);
-            AddPreviewLine(canvas);
-        }
-
-        public void AddPreviewLine(Canvas canvas)
-        {
-            if (previewPoints.Count <= 1)
+            if (previewData.Points.Count <= 1)
                 return;
+
+            var previewPoints = previewData.Points;
+            var previewCount = previewData.Points.Count;
 
             Line newLine = new Line();
             newLine.Stroke = PREVIEW_COLOR;
-            newLine.X1 = previewPoints[previewPoints.Count - 2].X;
-            newLine.Y1 = previewPoints[previewPoints.Count - 2].Y;
-            newLine.X2 = previewPoints[previewPoints.Count - 1].X;
-            newLine.Y2 = previewPoints[previewPoints.Count - 1].Y;
+            newLine.X1 = previewPoints[previewCount - 2].X;
+            newLine.Y1 = previewPoints[previewCount - 2].Y;
+            newLine.X2 = previewPoints[previewCount - 1].X;
+            newLine.Y2 = previewPoints[previewCount - 1].Y;
             newLine.StrokeThickness = 2;
 
             canvas.Children.Add(newLine);
@@ -353,26 +468,18 @@ namespace ImageSlicer
             previewLines.Add(newLine);
         }
 
-        public void ClearSlicePreview(Canvas canvas)
+        public void Close(Canvas canvas, SelectionPreviewData previewData)
         {
-            previewPoints.Clear();
-            foreach (var line in previewLines)
-            {
-                canvas.Children.Remove(line);
-            }
-            previewLines.Clear();
-            canvas.Children.Remove(mouseLine);
-        }
-
-        public void FinishSliceDrawing(Canvas canvas, Image image)
-        {
-            isFinishedDrawing = true;
+            isClosed = true;
             slicePoly.Stroke = SLICE_COLOR;
             slicePoly.StrokeThickness = 2;
-            slicePoly.Points = new PointCollection(previewPoints);
+            slicePoly.Points = previewData.ToPointCollection();
+
+            Geometry sliceGeometry = Utils.GetGeometryFromPoints(previewData.ToPointCollection());
+
             canvas.Children.Add(slicePoly);
 
-            Rect polyRect = GetSliceGeometry(canvas, image, false).Bounds;
+            Rect polyRect = sliceGeometry.Bounds;
             boundsRect = new Rectangle { 
                 Width = polyRect.Width,
                 Height = polyRect.Height,
@@ -390,61 +497,37 @@ namespace ImageSlicer
             Canvas.SetTop(boundsCenter, Utils.GetRectCenter(polyRect).Y);
             canvas.Children.Add(boundsCenter);
 
-            ClearSlicePreview(canvas);
+            RemovePreviewFrom(canvas);
         }
 
-        public void ClearSliceDrawing(Canvas canvas)
+        public void RemovePreviewFrom(Canvas canvas)
         {
-            isFinishedDrawing = false;
+            foreach (var line in previewLines)
+            {
+                canvas.Children.Remove(line);
+            }
+            previewLines.Clear();
+            canvas.Children.Remove(mouseLine);
+        }
+
+        public void RemoveDrawingFrom(Canvas canvas)
+        {
+            isClosed = false;
             canvas.Children.Remove(slicePoly);
             canvas.Children.Remove(boundsRect);
             canvas.Children.Remove(boundsCenter);
         }
 
-        public bool IsMouseCloseToSliceBegin(Point mousePos)
+        public void RemoveAllFrom(Canvas canvas)
         {
-            if (previewPoints.Count < 1)
-                return false;
-
-            Point firstSlicePos = previewPoints[0];
-            double distance = (mousePos - firstSlicePos).Length;
-
-            return distance < DISTANCE_TO_CLOSE_SLICE;
-        }
-
-        public PathGeometry GetSliceGeometry(Canvas canvas, Image image, bool useImageSpace = true)
-        {
-            if (!isFinishedDrawing)
-                return null;
-
-            // Translate points from canvas space to image space
-            PointCollection slicePoints = new PointCollection();
-            var to_image_space = canvas.TransformToVisual(image);
-            for (int i = 0; i < slicePoly.Points.Count; i++)
-            {
-                slicePoints.Add(useImageSpace ? to_image_space.Transform(slicePoly.Points[i]) : slicePoly.Points[i]);
-            }
-
-            var segment = new PolyLineSegment
-            {
-                Points = new PointCollection(slicePoints.Skip(1))
-            };
-
-            var figure = new PathFigure
-            {
-                StartPoint = slicePoints[0],
-                IsClosed = true
-            };
-            figure.Segments.Add(segment);
-
-            var sliceGeometry = new PathGeometry();
-            sliceGeometry.Figures.Add(figure);
-
-            return sliceGeometry;
+            RemovePreviewFrom(canvas);
+            RemoveDrawingFrom(canvas);
+            isClosed = false;
+            previewLines.Clear();
+            mouseLine = new Line();
+            slicePoly = new Polygon();
         }
     }
-
-
     public class SnapBoundsSettings
     {
         public int X { get; set; }
