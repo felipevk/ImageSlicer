@@ -11,7 +11,10 @@
         <StackPanel>
             <StackPanel Orientation="Horizontal">
                 <Button x:Name="openButton" Width="184" Height="40" Content="Open" FontWeight="Bold" FontSize="16" Click="openButton_Click" />
-                <Border Width="675" />
+                <Border Width="595" />
+                <ToggleButton x:Name="snapToEdgesButton" Content="Snap" 
+                  IsChecked="True" 
+                  Margin="0,0,10,0" Width="69" />
                 <Button x:Name="sliceButton" Content="Slice" Width="142" Height="40" FontSize="16" FontWeight="Bold" Click="sliceButton_Click" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,0,10,0"/>
                 <Button x:Name="saveButton" Width="184" Height="40" Content="Save" FontWeight="Bold" FontSize="16" VerticalAlignment="Center" Click="saveButton_Click" Margin="0,0,-4,0" />
             </StackPanel>

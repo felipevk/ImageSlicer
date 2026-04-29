@@ -136,6 +136,11 @@ namespace ImageSlicer
             {
                 if (previewData.IsPointCloseToStart(mousePos))
                 {
+                    if (snapToEdgesButton.IsChecked.GetValueOrDefault(false))
+                    {
+                        SnapSelectionToImageEdges();
+                    }
+
                     slicePreviewShape.Close(mainCanvas, previewData);
                     sliceButton.IsEnabled = true;
                 }
@@ -146,6 +151,20 @@ namespace ImageSlicer
                 }
             }
         }
+        private void SnapSelectionToImageEdges()
+        {
+            var previewGeo = previewData.GetGeometry();
+            var imageGeo = currentGeometry.Clone();
+
+            // transform imageGeo from image space to canvas space
+            var to_canvas_space = img.TransformToAncestor(mainCanvas);
+            imageGeo.Transform = (Transform)to_canvas_space;
+
+            PointCollection selectionDataAdjusted = Utils.GetPointsFromGeometry(Utils.Intersection(previewGeo, imageGeo));
+
+            previewData = new SelectionPreviewData(selectionDataAdjusted);
+        }
+
         private void sliceButton_Click(object sender, RoutedEventArgs e)
         {
             if (!slicePreviewShape.isClosed)
@@ -153,6 +172,11 @@ namespace ImageSlicer
 
             // Move geometry to image space
             var sliceGeometry = previewData.GetGeometry(mainCanvas, img);
+
+            if (snapToEdgesButton.IsChecked == true)
+            {
+                sliceGeometry = Utils.Intersection(sliceGeometry.Clone(), currentGeometry);
+            }
 
             var rtb = RenderSlice(sliceGeometry, img);
 
@@ -480,7 +504,8 @@ namespace ImageSlicer
             canvas.Children.Add(slicePoly);
 
             Rect polyRect = sliceGeometry.Bounds;
-            boundsRect = new Rectangle { 
+            boundsRect = new Rectangle
+            {
                 Width = polyRect.Width,
                 Height = polyRect.Height,
                 StrokeDashArray = [4, 2],
