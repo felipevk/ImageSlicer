@@ -170,13 +170,8 @@ namespace ImageSlicer
             if (!slicePreviewShape.isClosed)
                 return;
 
-            // Move geometry to image space
+            // Use image space
             var sliceGeometry = previewData.GetGeometry(mainCanvas, img);
-
-            if (snapToEdgesButton.IsChecked == true)
-            {
-                sliceGeometry = Utils.Intersection(sliceGeometry.Clone(), currentGeometry);
-            }
 
             var rtb = RenderSlice(sliceGeometry, img);
 
